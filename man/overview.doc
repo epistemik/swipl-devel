@@ -1170,6 +1170,17 @@ binding the variables to their name. Using this feature, F(x) can be
 turned into valid syntax for such script languages. Suggested by Robert
 van Engelen.  SWI-Prolog specific.
 
+    \prologflagitem{android}{bool}{r}
+If present and true, it indicates we are running on the
+Android OS. The flag is not present in other operating systems.
+
+    \prologflagitem{android_api}{integer}{r}
+If running on Android, it indicates the compile-time API
+Level defined by the C macro \verb$__ANDROID_API__$. It is not
+defined if running on other operating systems. The API level may
+or may not match the API level of the running device, since it is
+the API level at compile time.
+
     \prologflagitem{argv}{list}{rw}
 List is a list of atoms representing the application command line
 arguments. Application command line arguments are those that have
@@ -1627,6 +1638,12 @@ flag is implementation-defined.
 If true, \exam{open(pipe(command), mode, Stream)}, etc.\ are supported.
 Can be changed to disable the use of pipes in applications testing this
 feature.  Not recommended.
+
+    \prologflagitem{portable_vmi}{bool}{rw}
+If \const{true} (default), generate \fileext{qlf} files and saved states
+that run both on 32 bit and 64-bit hardware.  If \const{false}, some
+optimized virtual machine instructions are only used if the integer
+argument is within the range of a tagged integer for 32-bit machines.
 
     \prologflagitem{posix_shell}{atom}{rw}
 Path to a POSIX compatible shell.  This default is typically

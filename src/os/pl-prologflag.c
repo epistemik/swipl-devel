@@ -1415,6 +1415,7 @@ initPrologFlags(void)
 		GD->options.traditional ? "codes" : "string");
   setPrologFlag("back_quotes", FT_ATOM,
 		GD->options.traditional ? "symbol_char" : "codes");
+  setPrologFlag("portable_vmi", FT_BOOL, TRUE, PLFLAG_PORTABLE_VMI);
   setPrologFlag("traditional", FT_BOOL|FF_READONLY, GD->options.traditional, 0);
   setPrologFlag("unknown", FT_ATOM, "error");
   setPrologFlag("debug", FT_BOOL, FALSE, 0);
@@ -1440,6 +1441,12 @@ initPrologFlags(void)
 #endif
 #ifdef __APPLE__
   setPrologFlag("apple", FT_BOOL|FF_READONLY, TRUE, 0);
+#endif
+#ifdef __ANDROID__
+  setPrologFlag("android", FT_BOOL|FF_READONLY, TRUE, 0);
+# ifdef __ANDROID_API__
+  setPrologFlag("android_api",FT_INTEGER|FF_READONLY, __ANDROID_API__);
+# endif
 #endif
 #endif
 

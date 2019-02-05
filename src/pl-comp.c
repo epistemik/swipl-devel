@@ -206,6 +206,34 @@ typedef struct c_warning
 } c_warning;
 
 
+		 /*******************************
+		 *	  PORTABLE CHECK	*
+		 *******************************/
+
+#if SIZEOF_VOIDP == 4
+#define is_portable_smallint(w) (tagex(w) == (TAG_INTEGER|STG_INLINE))
+#define is_portable_constant(w) isConst(w)
+#else
+#define is_portable_smallint(w) is_portable_smallint__LD(w PASS_LD)
+#define is_portable_constant(w) (isAtom(w) || is_portable_smallint(w))
+
+#define PORTABLE_INT_MASK 0xffffffff80000000
+
+static inline int
+is_portable_smallint__LD(word w ARG_LD)
+{ if ( tagex(w) == (TAG_INTEGER|STG_INLINE) )
+  { if ( truePrologFlag(PLFLAG_PORTABLE_VMI) )
+    { word masked = w&PORTABLE_INT_MASK;
+
+      return !masked || masked == PORTABLE_INT_MASK;
+    } else
+    { return TRUE;
+    }
+  } else
+    return FALSE;
+}
+
+#endif
 
 		 /*******************************
 		 *	     COMPILER		*
@@ -2213,7 +2241,7 @@ A void.  Generate either B_VOID or H_VOID.
 #if SIZEOF_VOIDP == 8
           Output_1(ci, (where&A_HEAD) ? H_INTEGER : B_INTEGER, (intptr_t)val);
 #else
-          if ( val >= LONG_MIN && val <= LONG_MAX )
+          if ( val >= INTPTR_MIN && val <= INTPTR_MAX )
 	  { Output_1(ci, (where&A_HEAD) ? H_INTEGER : B_INTEGER, (intptr_t)val);
 	  } else
 	  { int c = ((where&A_HEAD) ? H_INT64 : B_INT64);
@@ -2749,7 +2777,7 @@ compileSimpleAddition(Word sc, compileInfo *ci ARG_LD)
 
 	if ( (vi=isIndexedVarTerm(*a1 PASS_LD)) >= 0 &&
 	     !isFirstVar(ci->used_var, vi) &&
-	     tagex(*a2) == (TAG_INTEGER|STG_INLINE) )
+	     is_portable_smallint(*a2) )
 	{ intptr_t i = valInt(*a2);
 
 	  if ( neg )
@@ -3111,7 +3139,7 @@ compileBodyUnify(Word arg, compileInfo *ci ARG_LD)
 
   unify_term:
     first = isFirstVarSet(ci->used_var, i1);
-    if ( isConst(*a2) )
+    if ( is_portable_constant(*a2) )
     { Output_2(ci, first ? B_UNIFY_FC : B_UNIFY_VC, VAROFFSET(i1), *a2);
       if ( isAtom(*a2) )
 	PL_register_atom(*a2);
@@ -3195,7 +3223,7 @@ compileBodyEQ(Word arg, compileInfo *ci ARG_LD)
     return TRUE;
   }
 
-  if ( i1 >= 0 && isConst(*a2) )	/* Var == const */
+  if ( i1 >= 0 && is_portable_constant(*a2) )	/* Var == const */
   { int f1 = isFirstVar(ci->used_var, i1);
 
     if ( f1 ) Output_1(ci, C_VAR, VAROFFSET(i1));
@@ -3204,7 +3232,7 @@ compileBodyEQ(Word arg, compileInfo *ci ARG_LD)
       PL_register_atom(*a2);
     return TRUE;
   }
-  if ( i2 >= 0 && isConst(*a1) )	/* const == Var */
+  if ( i2 >= 0 && is_portable_constant(*a1) )	/* const == Var */
   { int f2 = isFirstVar(ci->used_var, i2);
 
     if ( f2 ) Output_1(ci, C_VAR, VAROFFSET(i2));
@@ -3274,7 +3302,7 @@ compileBodyNEQ(Word arg, compileInfo *ci ARG_LD)
     return TRUE;
   }
 
-  if ( i1 >= 0 && isConst(*a2) )	/* Var == const */
+  if ( i1 >= 0 && is_portable_constant(*a2) )	/* Var == const */
   { int f1 = isFirstVar(ci->used_var, i1);
 
     if ( f1 ) Output_1(ci, C_VAR, VAROFFSET(i1));
@@ -3283,7 +3311,7 @@ compileBodyNEQ(Word arg, compileInfo *ci ARG_LD)
       PL_register_atom(*a2);
     return TRUE;
   }
-  if ( i2 >= 0 && isConst(*a1) )	/* const == Var */
+  if ( i2 >= 0 && is_portable_constant(*a1) )	/* const == Var */
   { int f2 = isFirstVar(ci->used_var, i2);
 
     if ( f2 ) Output_1(ci, C_VAR, VAROFFSET(i2));
@@ -3725,15 +3753,18 @@ mode, the predicate is still undefined and is not dynamic or multifile.
   /* assert[az]/1 */
 
   if ( false(def, P_DYNAMIC) )
-  { if ( !setDynamicDefinition(def, TRUE) )
-    { freeClause(clause);
-      return NULL;
+  { if ( isDefinedProcedure(proc) )
+    { PL_error(NULL, 0, NULL, ERR_MODIFY_STATIC_PROC, proc);
+      goto error;
     }
+    if ( !setDynamicDefinition(def, TRUE) )
+      goto error;
   }
 
   if ( (cref=assertProcedure(proc, clause, where PASS_LD)) )
     return cref->value.clause;
 
+error:
   freeClause(clause);
   return NULL;
 }

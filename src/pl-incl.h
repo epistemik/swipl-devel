@@ -244,7 +244,7 @@ gcc.
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #ifndef __unix__
-#if defined(_AIX) || defined(__APPLE__) || defined(__unix) || defined(__BEOS__) || defined(__NetBSD__)
+#if defined(_AIX) || defined(__APPLE__) || defined(__unix) || defined(__BEOS__) || defined(__NetBSD__) || defined(__HAIKU__)
 #define __unix__ 1
 #endif
 #endif
@@ -2162,7 +2162,7 @@ typedef struct redir_context
 		*       READ WARNINGS           *
 		*********************************/
 
-#define ReadingSource (source_line_no > 0 && \
+#define ReadingSource (source_line_no >= 0 && \
 		       source_file_name != NULL_ATOM)
 
 
@@ -2335,7 +2335,7 @@ typedef struct debuginfo
 #define PLFLAG_AUTOLOAD		    0x00004000 /* do autoloading */
 #define PLFLAG_CHARCONVERSION	    0x00008000 /* do character-conversion */
 #define PLFLAG_LASTCALL		    0x00010000 /* Last call optimization enabled? */
-//				    0x00020000 /* not used */
+#define PLFLAG_PORTABLE_VMI	    0x00020000 /* Generate portable VMI code */
 #define PLFLAG_SIGNALS		    0x00040000 /* Handle signals */
 #define PLFLAG_DEBUGINFO	    0x00080000 /* generate debug info */
 #define PLFLAG_FILEERRORS	    0x00100000 /* Edinburgh file errors */

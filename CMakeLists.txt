@@ -3,6 +3,7 @@ project(SWI-Prolog)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(CMAKE_POLICY_DEFAULT_CMP0075 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0074 NEW)
 
 option(MULTI_THREADED
        "Enable multiple Prolog threads"
@@ -43,6 +44,10 @@ option(BUILD_SWIPL_LD
 option(INSTALL_TESTS
        "Install script and files needed to run tests of the final installation"
        OFF)
+
+if(NOT SWIPL_SHARED_LIB)
+  set(CMAKE_ENABLE_EXPORTS ON)
+endif()
 
 include(Utils)
 include(BuildType)

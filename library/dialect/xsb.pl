@@ -47,16 +47,28 @@
             compiler_options/1,			% +Options
 
             xsb_import/2,                       % +Preds, From
+            xsb_dynamic/1,                      % +Preds
+
+            fail_if/1,				% :Goal
+
+            tnot/1,				% :Goal
+            not_exists/1,			% :Goal
+            sk_not/1,				% :Goal
+
+            xsb_findall/3,			% +Template, :Goal, -Answers
 
             op(1050,  fy, import),
             op(1050,  fx, export),
             op(1040, xfx, from),
             op(1100,  fy, index),               % ignored
-            op(1100,  fx, mode)                 % ignored
+            op(1100,  fy, ti),                  % transformational indexing?
+            op(1100,  fx, mode),                % ignored
+            op(900,   fy, not)                  % defined as op in XSB
           ]).
 :- use_module(library(error)).
 :- use_module(library(debug)).
 :- use_module(library(dialect/xsb/source)).
+:- use_module(library(dialect/xsb/tables)).
 
 /** <module> XSB Prolog compatibility layer
 
@@ -65,12 +77,22 @@ system](http://xsb.sourceforge.net/)
 */
 
 :- meta_predicate
-    xsb_import(:, +),
-    compile(:, +),
+    xsb_import(:, +),                   % Module interaction
+    xsb_dynamic(:),
+
+    compile(:, +),                      % Loading files
     load_dyn(:),
     load_dyn(:, +),
     load_dync(:),
-    load_dync(:, +).
+    load_dync(:, +),
+
+    fail_if(0),                         % Meta predicates
+    tnot(0),
+    not_exists(0),
+    sk_not(0),
+
+    xsb_findall(+,0,-).
+
 
 		 /*******************************
 		 *	    LIBRARY SETUP	*
@@ -105,6 +127,12 @@ push_xsb_library :-
 setup_dialect :-
     style_check(-discontiguous).
 
+:- multifile
+    user:term_expansion/2,
+    user:goal_expansion/2.
+
+:- dynamic
+    moved_directive/2.
 
 % Register XSB specific term-expansion to rename conflicting directives.
 
@@ -112,11 +140,31 @@ user:term_expansion(In, Out) :-
     prolog_load_context(dialect, xsb),
     xsb_term_expansion(In, Out).
 
+xsb_term_expansion((:- Directive), []) :-
+    prolog_load_context(file, File),
+    retract(moved_directive(File, Directive)),
+    !.
 xsb_term_expansion((:- import Preds from From),
                    (:- xsb_import(Preds, From))).
 xsb_term_expansion((:- index(_PI, _How)), []).
 xsb_term_expansion((:- index(_PI)), []).
+xsb_term_expansion((:- ti(_PI)), []).
 xsb_term_expansion((:- mode(_Modes)), []).
+xsb_term_expansion((:- dynamic(Preds)), (:- xsb_dynamic(Preds))).
+
+user:goal_expansion(In, Out) :-
+    prolog_load_context(dialect, xsb),
+    (   xsb_mapped_predicate(In, Out)
+    ->  true
+    ;   xsb_inlined_goal(In, Out)
+    ).
+
+xsb_mapped_predicate(expand_file_name(File, Expanded),
+                     xsb_expand_file_name(File, Expanded)).
+xsb_mapped_predicate(findall(Template, Goal, List),
+                     xsb_findall(Template, Goal, List)).
+
+xsb_inlined_goal(fail_if(P), \+(P)).
 
 %!  xsb_import(:Predicates, +From)
 %
@@ -141,6 +189,12 @@ xsb_import((A,B), Into, From) :-
     !,
     xsb_import(A, Into, From),
     xsb_import(B, Into, From).
+xsb_import(Name/Arity, Into, From) :-
+    functor(Head, Name, Arity),
+    xsb_mapped_predicate(Head, NewHead),
+    functor(NewHead, NewName, Arity),
+    !,
+    xsb_import(NewName/Arity, Into, From).
 xsb_import(PI, Into, usermod) :-
     !,
     export(user:PI),
@@ -181,6 +235,12 @@ xsb_import(Name/Arity, Into, _From) :-
 xsb_import(_Name/_Arity, _Into, From) :-
     existence_error(xsb_module, From).
 
+import_from_module(PI, Into, From) :-
+    module_property(From, exports(List)),
+    memberchk(PI, List),
+    !,
+    debug(xsb(import), '~p: importing from module ~p', [Into:PI, From]),
+    @(import(From:PI), Into).
 import_from_module(PI, Into, From) :-
     current_predicate(From:PI),
     !,
@@ -288,10 +348,15 @@ compile(File, _Options) :-
 %   The _dync_ versions demand source in canonical format. In SWI-Prolog
 %   there is little reason to demand this.
 
-load_dyn(File)       :- load_files(File).
-load_dyn(File, Dir)  :- must_be(oneof([z]), Dir), load_files(File).
-load_dync(File)      :- load_files(File).
-load_dync(File, Dir) :- must_be(oneof([z]), Dir), load_files(File).
+load_dyn(File)       :-
+    '$style_check'(Style, Style),
+    setup_call_cleanup(
+        style_check(-singleton),
+        load_files(File),
+        '$style_check'(_, Style)).
+        load_dyn(File, Dir)  :- must_be(oneof([z]), Dir), load_dyn(File).
+load_dync(File)      :- load_dyn(File).
+load_dync(File, Dir) :- load_dyn(File, Dir).
 
 %!  set_global_compiler_options(+List) is det.
 %
@@ -362,6 +427,91 @@ clear_compiler_option(optimize) :-
     set_prolog_flag(optimise, false).
 clear_compiler_option(allow_redefinition).
 clear_compiler_option(xpp_on).
+
+%!  xsb_dynamic(Preds)
+%
+%   Apply dynamic to the original predicate.  This deals with a sequence
+%   that seems common in XSB:
+%
+%       :- import p/1 from x.
+%       :- dynamic p/1.
+
+xsb_dynamic(M:Preds) :-
+    xsb_dynamic_(Preds, M).
+
+xsb_dynamic_(Preds, _M) :-
+    var(Preds),
+    !,
+    instantiation_error(Preds).
+xsb_dynamic_((A,B), M) :-
+    !,
+    xsb_dynamic_(A, M),
+    xsb_dynamic_(B, M).
+xsb_dynamic_(Name/Arity, M) :-
+    functor(Head, Name, Arity),
+    '$get_predicate_attribute'(M:Head, imported, M2), % predicate_property/2 requires
+    !,                                                % P to be defined.
+    dynamic(M2:Name/Arity).
+xsb_dynamic_(PI, M) :-
+    dynamic(M:PI).
+
+
+		 /*******************************
+		 *            BUILT-INS		*
+		 *******************************/
+
+%!  fail_if(:P)
+%
+%   Same as \+ (support XSB legacy code).  As the XSB manual claims this
+%   is optimized we normally do goal expansion to \+/1.
+
+fail_if(P) :-
+    \+ P.
+
+		 /*******************************
+		 *      TABLING BUILT-INS	*
+		 *******************************/
+
+%!  tnot(:P).
+%!  not_exists(:P).
+%!  sk_not(:P).
+%
+%   XSB tabled negation. According to the XSB manual, sk_not/1 is an old
+%   name for not_exists/1. The predicates   tnot/1  and not_exists/1 are
+%   not precisely the same. We ignore that for now.
+%
+%   The actual implementation is in xsb/tables.pl, 't not'/1.
+
+tnot(P) :-
+    't not'(P).
+
+not_exists(P) :-
+    tnot(P).
+
+sk_not(P) :-
+    not_exists(P).
+
+
+%!  xsb_findall(+Template, :Goal, -List) is det.
+%
+%   Alternative to findall/3 that is safe to   be used for tabling. This
+%   is a temporary hack  as  the   findall/3  support  predicates cannot
+%   handle suspension from inside the findall   goal  because it assumes
+%   perfect nesting of findall.
+
+xsb_findall(T, G, L) :-
+    L0 = [dummy|_],
+    Result = list(L0),
+    (   call(G),
+        duplicate_term(T, T2),
+        NewLastCell = [T2|_],
+        arg(1, Result, LastCell),
+        nb_linkarg(2, LastCell, NewLastCell),
+        nb_linkarg(1, Result, NewLastCell),
+        fail
+    ;   arg(1, Result, [_]),
+        L0 = [_|L]
+    ).
 
 
 		 /*******************************
